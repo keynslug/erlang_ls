@@ -23,7 +23,7 @@ dependencies(Uri) ->
 -spec included_uris(els_dt_document:item()) -> [uri()].
 included_uris(Document) ->
   POIs = els_dt_document:pois(Document, [include, include_lib]),
-  included_uris([Id || #{id := Id} <- POIs], []).
+  lists:flatmap(fun(POI) -> included_uris(POI, Document) end, POIs).
 
 -spec range(els_dt_document:item() | undefined,
             erl_anno:anno() | none) -> poi_range().
@@ -127,11 +127,14 @@ applications_to_uris(Applications) ->
         end,
   lists:foldl(Fun, [], Modules).
 
--spec included_uris([atom()], [uri()]) -> [uri()].
-included_uris([], Acc) ->
-  lists:usort(Acc);
-included_uris([Id|Ids], Acc) ->
-  case els_utils:find_header(els_utils:filename_to_atom(Id)) of
-    {ok, Uri}       -> included_uris(Ids, [Uri | Acc]);
-    {error, _Error} -> included_uris(Ids, Acc)
+-spec included_uris(_POI :: els_dt_document:item(), _In :: els_dt_document:item()) -> [uri()].
+included_uris(#{kind := include_lib, id := Id}, _Document) ->
+  case els_utils:find_header(Id) of
+    {ok, HeaderUri} -> [HeaderUri];
+    {error, _Error} -> []
+  end;
+included_uris(#{kind := include, id := Id}, #{uri := DocumentUri}) ->
+  case els_utils:find_header(els_utils:filename_to_atom(Id), DocumentUri) of
+    {ok, HeaderUri} -> [HeaderUri];
+    {error, _Error} -> []
   end.

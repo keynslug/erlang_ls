@@ -4,6 +4,7 @@
 
 %% API
 -export([ find_and_index_file/1
+        , find_and_index_file/2
         , index_file/1
         , index/3
         , index_dir/2
@@ -34,8 +35,16 @@
    {ok, uri()} | {error, any()}.
 find_and_index_file(FileName) ->
   SearchPaths = els_config:get(search_paths),
-  case file:path_open( SearchPaths
-                     , els_utils:to_binary(FileName)
+  find_and_index_file(FileName, SearchPaths).
+
+-spec find_and_index_file(string(), [filename:name()]) ->
+   {ok, uri()} | {error, any()}.
+find_and_index_file(FileName, SearchPaths) ->
+  BaseName = filename:basename(FileName),
+  DirName = filename:dirname(FileName),
+  RefinedSearchPaths = refine_search_paths(DirName, SearchPaths),
+  case file:path_open( RefinedSearchPaths
+                     , els_utils:to_binary(BaseName)
                      , [read]
                      )
   of
@@ -46,6 +55,11 @@ find_and_index_file(FileName) ->
     {error, Error} ->
       {error, Error}
   end.
+
+refine_search_paths(".", SearchPaths) ->
+  SearchPaths;
+refine_search_paths(DirName, SearchPaths) ->
+  [P || P <- SearchPaths, els_utils:ends_with_subdir(P, DirName)].
 
 -spec index_file(binary()) -> {ok, uri()}.
 index_file(Path) ->

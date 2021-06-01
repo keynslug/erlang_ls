@@ -4,6 +4,8 @@
         , cmd/3
         , filename_to_atom/1
         , find_header/1
+        , find_header/2
+        % , find_lib_header/1
         , find_module/1
         , fold_files/4
         , halt/1
@@ -11,6 +13,7 @@
         , include_id/1
         , include_lib_id/1
         , macro_string_to_term/1
+        , prioritize/2
         , project_relative/1
         , resolve_paths/3
         , to_binary/1
@@ -97,14 +100,83 @@ filename_to_atom(FileName) ->
 
 %% @doc Look for a header in the DB
 -spec find_header(atom()) -> {ok, uri()} | {error, any()}.
-find_header(Id) ->
-  {ok, Candidates} = els_dt_document_index:lookup(Id),
-  case [Uri || #{kind := header, uri := Uri} <- Candidates] of
+find_header(Id) when is_atom(Id) ->
+  case lookup_headers(Id) of
     [Uri | _] ->
       {ok, Uri};
     [] ->
       FileName = atom_to_list(Id) ++ ".hrl",
       els_indexing:find_and_index_file(FileName)
+  end.
+
+%% @doc Look for a header in the DB which is "closest" to the includer URI,
+%% e.g. present in the same or parent directory.
+-spec find_header(atom(), uri()) -> {ok, uri()} | {error, any()}.
+find_header(Id, IncluderUri) ->
+  IncluderPath = filename:dirname(els_uri:path(IncluderUri)),
+  IncluderPaths = [
+    %% This is "${includer_app}/src" most of the time
+    IncluderPath,
+    %% This is "${includer_app}/" most of the time
+    filename:dirname(IncluderPath)
+  ],
+  case lookup_preferred_header(Id, is_subdir_of(IncluderPaths)) of
+    {ok, Uri} ->
+      {ok, Uri};
+    error ->
+      FileName = atom_to_list(Id) ++ ".hrl",
+      case els_indexing:find_and_index_file(FileName, IncluderPaths) of
+        {ok, Uri} ->
+          {ok, Uri};
+        {error, _} ->
+          els_indexing:find_and_index_file(FileName)
+      end
+  end.
+
+% -spec find_lib_header(file:filename()) -> {ok, uri()} | {error, any()}.
+% find_lib_header(FileName) when is_list(FileName) ->
+%   % Id = filename_to_atom(FileName),
+%   case filename:dirname(FileName) of
+%     "." ->
+%       {error, invalid};
+%     DirName ->
+%       DirParts = [AppName | Rest] = filename:split(FileName),
+%       case lookup_preferred_header(Id, ends_with_subdir(DirName)) of
+%         {ok, Uri} ->
+%           {ok, Uri};
+%         error ->
+%           els_indexing:find_and_index_file(FileName)
+%       end
+%   end.
+
+% ends_with_subdir(DirName) ->
+%   fun(Uri) -> ends_with_subdir(DirName, els_uri:path(Uri)) end.
+
+% longest_prefix_length(RelevantUri) ->
+%   fun(Uri) -> binary:longest_common_prefix([Uri, RelevantUri]) end.
+
+is_subdir_of(Paths) ->
+  fun(Uri) ->
+    Path = els_uri:path(Uri),
+    Left = lists:dropwhile(fun(P) -> not is_subdir_of(Path, P) end, Paths),
+    % This effectively prioritizes earlier paths in `Paths`.
+    length(Left)
+  end.
+
+is_subdir_of(Path, MaybeParent) ->
+  lists:prefix(filename:split(MaybeParent), filename:split(Path)).
+
+lookup_headers(Id) ->
+  {ok, Candidates} = els_dt_document_index:lookup(Id),
+  [Uri || #{kind := header, uri := Uri} <- Candidates].
+
+lookup_preferred_header(Id, PrioFun) ->
+  CandidateUris = lookup_headers(Id),
+  case CandidateUris of
+    [_ | _] ->
+      {ok, prioritize(PrioFun, CandidateUris)};
+    [] ->
+      error
   end.
 
 %% @doc Look for a module in the DB
@@ -178,6 +250,12 @@ macro_string_to_term(Value) ->
       true
   end.
 
+%% @doc Checks whether given path end with specified subdirectory.
+% -spec ends_with_subdir(filename:name(), filename:name()) -> boolean().
+% ends_with_subdir(Path, SubDir) ->
+%   Parts = filename:split(SubDir),
+%   length(Parts) > 0 andalso lists:suffix(Parts, filename:split(Path)).
+
 %% @doc Folds over all files in a directory recursively
 %%
 %% Applies function F to each file and the accumulator,
@@ -231,6 +309,28 @@ to_list(X) when is_binary(X) ->
     Result when is_list(Result) -> Result;
     _ -> binary_to_list(X)
   end.
+
+-spec prioritize(fun((T, T) -> number() | boolean()), [T, ...]) -> T.
+prioritize(F, [V1 | Vs]) ->
+  {Vm, _Pm} = lists:foldl(
+    fun(V, {Vm, Pm}) ->
+      P = priority(F(V)),
+      case P > Pm of
+        true  -> {V, P};
+        false -> {Vm, Pm}
+      end
+    end,
+    {V1, F(V1)},
+    Vs
+  ),
+  Vm.
+
+priority(false) ->
+  0;
+priority(true) ->
+  1;
+priority(N) when is_number(N) ->
+  N.
 
 %%==============================================================================
 %% Internal functions

@@ -55,7 +55,7 @@
 %%==============================================================================
 -spec suite() -> [tuple()].
 suite() ->
-  [{timetrap, {seconds, 30}}].
+  [{timetrap, {seconds, 10}}].
 
 -spec all() -> [{group, stdio | tcp}].
 all() ->
@@ -70,6 +70,9 @@ init_per_suite(Config) ->
   %% If epp:open/5 is exported we know that columns are not
   %% returned by the compiler warnings and errors.
   %% Should find a better heuristic for this.
+  _ = dbg:tracer(),
+  _ = dbg:p(all, c),
+  _ = dbg:tpl({'els_indexing', 'refine_search_paths', '_'}, x),
   [{columns, not erlang:function_exported(epp, open, 5)} |
    els_test_utils:init_per_suite(Config)].
 
