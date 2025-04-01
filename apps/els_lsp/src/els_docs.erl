@@ -315,11 +315,16 @@ get_doc([Beam | T], Module) ->
 -spec find_beams(module()) -> [file:filename()].
 find_beams(Module) ->
     %% Look for matching .beam files under the project root
-    RootUri = els_config:get(root_uri),
-    Root = binary_to_list(els_uri:path(RootUri)),
-    Beams0 = filelib:wildcard(
-        filename:join([Root, "**", atom_to_list(Module) ++ ".beam"])
-    ),
+    AppsPaths = els_config:get(apps_ebin_paths),
+    DepsPaths = els_config:get(deps_ebin_paths),
+    Filename = atom_to_list(Module) ++ ".beam",
+    Beams0 = [
+        Beam
+     || Ps <- [AppsPaths, DepsPaths],
+        Path <- Ps,
+        Beam <- [filename:join(Path, Filename)],
+        filelib:is_regular(Beam)
+    ],
     %% Sort the beams, to ensure we try the newest beam first
     TimeBeams = [{filelib:last_modified(Beam), Beam} || Beam <- Beams0],
     {_, Beams} = lists:unzip(lists:reverse(lists:sort(TimeBeams))),

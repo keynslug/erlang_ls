@@ -260,7 +260,9 @@ do_initialize(RootUri, Capabilities, InitOptions, {ConfigPath, Config}) ->
     ),
     %% Calculated from the above
     ok = set(apps_paths, project_paths(RootPath, AppsDirs, false)),
+    ok = set(apps_ebin_paths, ebin_paths(RootPath, AppsDirs)),
     ok = set(deps_paths, project_paths(RootPath, DepsDirs, false)),
+    ok = set(deps_ebin_paths, ebin_paths(RootPath, DepsDirs)),
     ok = set(include_paths, include_paths(RootPath, IncludeDirs, false)),
     ok = set(otp_paths, otp_paths(OtpPath, false) -- ExcludePaths),
     ok = set(lenses, Lenses),
@@ -324,7 +326,7 @@ start_link() ->
 
 -spec get(key()) -> any().
 get(Key) ->
-    gen_server:call(?SERVER, {get, Key}).
+    ets:lookup_element(?SERVER, Key, 2, undefined).
 
 -spec set(key(), any()) -> ok.
 set(Key, Value) ->
@@ -336,15 +338,16 @@ set(Key, Value) ->
 
 -spec init({}) -> {ok, state()}.
 init({}) ->
-    {ok, #{}}.
+    Tab = ets:new(?MODULE, [set, named_table, public, {read_concurrency, true}]),
+    {ok, Tab}.
 
 -spec handle_call(any(), any(), state()) ->
     {reply, any(), state()}.
 handle_call({get, Key}, _From, State) ->
-    Value = maps:get(Key, State, undefined),
+    Value = ets:lookup_element(State, Key, 2, undefined),
     {reply, Value, State};
-handle_call({set, Key, Value}, _From, State0) ->
-    State = maps:put(Key, Value, State0),
+handle_call({set, Key, Value}, _From, State) ->
+    ets:insert(State, {Key, Value}),
     {reply, ok, State}.
 
 -spec handle_cast(any(), state()) -> {noreply, state()}.
@@ -515,6 +518,13 @@ project_paths(RootPath, Dirs, Recursive) ->
             end,
             lists:filter(Filter, lists:append(Paths))
     end.
+
+-spec ebin_paths(path(), [string()]) -> [string()].
+ebin_paths(RootPath, Dirs) ->
+    lists:append([
+        els_utils:resolve_paths([[RootPath, Dir, "ebin"]], false)
+     || Dir <- Dirs
+    ]).
 
 -spec otp_paths(path(), boolean()) -> [string()].
 otp_paths(OtpPath, Recursive) ->
