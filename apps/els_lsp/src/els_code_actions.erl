@@ -776,7 +776,9 @@ guess_indentation([A, B | Rest]) ->
             N;
         {_, _} ->
             guess_indentation([B | Rest])
-    end.
+    end;
+guess_indentation([A]) ->
+    count_leading_spaces(A, 0).
 
 -spec count_leading_spaces(binary(), non_neg_integer()) -> non_neg_integer().
 count_leading_spaces(<<>>, _Acc) ->
