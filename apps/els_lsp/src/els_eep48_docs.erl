@@ -355,6 +355,8 @@ get_local_doc(_Missing, None, _D) when None =:= none; None =:= #{} ->
 -spec normalize_format(chunk_elements(), #docs_v1{}) -> chunk_elements().
 normalize_format(Docs, #docs_v1{format = ?NATIVE_FORMAT}) ->
     normalize(Docs);
+normalize_format(Docs, #docs_v1{format = Format = <<"text/markdown">>}) when is_binary(Docs) ->
+    [{p, [{ctype, Format}], [Docs]}];
 normalize_format(Docs, #docs_v1{format = <<"text/", _/binary>>}) when is_binary(Docs) ->
     [{pre, [], [Docs]}].
 
@@ -632,6 +634,8 @@ render_element({'div', [{class, What}], Content}, State, Pos, Ind, D) ->
     {Header, 0} = render_element({h3, [], [Title]}, State, Pos, Ind, D),
     {Docs, 0} = render_element({'div', [], Content}, ['div' | State], 0, Ind + 2, D),
     {[Header, Docs], 0};
+render_element({p, [{ctype, <<"text/markdown">>}], Content}, _State, _Pos, _Ind, _D) ->
+    trimnlnl(iolist_to_binary(Content));
 render_element({Tag, _, Content}, State, Pos, Ind, D) when Tag =:= p; Tag =:= 'div' ->
     trimnlnl(render_docs(Content, [Tag | State], Pos, Ind, D));
 render_element(Elem, State, Pos, Ind, D) when Pos < Ind ->
